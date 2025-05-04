@@ -1,0 +1,147 @@
+Barrett Unroll
+       807,696,963      cycles:u                                                    
+     2,342,988,271      instructions:u            #    2.90  insn per cycle         
+                                                  #    0.05  stalled cycles per insn
+       621,273,871      cache-references:u                                          
+         1,292,981      cache-misses:u            #    0.208 % of all cache refs    
+   <not supported>      branch-instructions:u                                       
+           463,679      branch-misses:u                                             
+        30,736,815      stalled-cycles-frontend:u #    3.81% frontend cycles idle   
+       127,354,886      stalled-cycles-backend:u  #   15.77% backend cycles idle    
+
+Barrett without Unroll
+       832,414,322      cycles:u                                                    
+     2,328,786,960      instructions:u            #    2.80  insn per cycle         
+       611,095,790      cache-references:u                                          
+         1,498,551      cache-misses:u            #    0.245 % of all cache refs    
+   <not supported>      branch-instructions:u                                       
+           497,000      branch-misses:u         
+多项式乘法结果正确
+average latency for n = 131072 p = 7340033 : 38.1032 (us) 
+多项式乘法结果正确
+average latency for n = 131072 p = 104857601 : 37.5099 (us) 
+多项式乘法结果正确
+average latency for n = 131072 p = 469762049 : 37.3638 (us) 
+
+
+
+对齐
+ Performance counter stats for './main':
+
+       902,866,401      cycles:u                                                    
+     2,102,920,921      instructions:u            #    2.33  insn per cycle         
+                                                  #    0.12  stalled cycles per insn
+       610,427,721      cache-references:u                                          
+         1,790,756      cache-misses:u            #    0.293 % of all cache refs    
+                 0      alignment-faults:u                                          
+        31,123,948      stalled-cycles-frontend:u #    3.45% frontend cycles idle   
+       257,817,344      stalled-cycles-backend:u  #   28.56% backend cycles idle    
+           108,101      dTLB-load-misses:u                                          
+   <not supported>      dTLB-store-misses:u                                         
+
+       0.398020820 seconds time elapsed
+
+       0.336982000 seconds user
+       0.050396000 seconds sys
+不对齐
+ Performance counter stats for './main':
+
+       906,972,724      cycles:u                                                    
+     2,102,920,919      instructions:u            #    2.32  insn per cycle         
+                                                  #    0.12  stalled cycles per insn
+       610,464,713      cache-references:u                                          
+         1,763,339      cache-misses:u            #    0.289 % of all cache refs    
+                 0      alignment-faults:u                                          
+        31,083,983      stalled-cycles-frontend:u #    3.43% frontend cycles idle   
+       261,891,282      stalled-cycles-backend:u  #   28.88% backend cycles idle    
+           105,232      dTLB-load-misses:u                                          
+   <not supported>      dTLB-store-misses:u   
+
+
+n=4 p=7340033
+
+ Performance counter stats for './main':
+
+         3,727,057      cycles:u                                                    
+         2,157,759      instructions:u            #    0.58  insn per cycle         
+                                                  #    1.01  stalled cycles per insn
+           941,667      cache-references:u                                          
+            23,209      cache-misses:u            #    2.465 % of all cache refs    
+                 0      alignment-faults:u                                          
+           623,642      stalled-cycles-frontend:u #   16.73% frontend cycles idle   
+         2,189,468      stalled-cycles-backend:u  #   58.75% backend cycles idle    
+            15,271      dTLB-load-misses:u                                          
+   <not supported>      dTLB-store-misses:u                                         
+
+       0.007386675 seconds time elapsed
+
+       0.000165000 seconds user
+       0.007275000 seconds sys
+
+n=131072 p=7340033
+       266,511,956      cycles:u                                                    
+       752,134,814      instructions:u            #    2.82  insn per cycle         
+                                                  #    0.06  stalled cycles per insn
+       198,849,964      cache-references:u                                          
+           398,838      cache-misses:u            #    0.201 % of all cache refs    
+            57,825      dTLB-load-misses:u                                          
+        10,931,404      stalled-cycles-frontend:u #    4.10% frontend cycles idle   
+        46,971,741      stalled-cycles-backend:u  #   17.62% backend cycles idle    
+
+n=131072 p=104857601
+ Performance counter stats for './main':
+
+       275,815,607      cycles:u                                                    
+       784,807,835      instructions:u            #    2.85  insn per cycle         
+                                                  #    0.06  stalled cycles per insn
+       208,223,641      cache-references:u                                          
+           392,897      cache-misses:u            #    0.189 % of all cache refs    
+            58,631      dTLB-load-misses:u                                          
+        10,654,338      stalled-cycles-frontend:u #    3.86% frontend cycles idle   
+        47,768,342      stalled-cycles-backend:u  #   17.32% backend cycles idle    
+
+       0.127074305 seconds time elapsed
+
+       0.088187000 seconds user
+       0.036057000 seconds sys
+
+
+
+
+
+
+数据预取
+       279,185,669      cycles:u                                                    
+       809,634,378      instructions:u            #    2.90  insn per cycle         
+                                                  #    0.05  stalled cycles per insn
+       215,488,156      cache-references:u                                          
+           398,488      cache-misses:u            #    0.185 % of all cache refs    
+            61,923      dTLB-load-misses:u                                          
+        10,847,046      stalled-cycles-frontend:u #    3.89% frontend cycles idle   
+        43,216,357      stalled-cycles-backend:u  #   15.48% backend cycles idle    
+数据不预取
+       281,843,045      cycles:u                                                    
+       808,094,244      instructions:u            #    2.87  insn per cycle         
+                                                  #    0.06  stalled cycles per insn
+       214,021,955      cache-references:u                                          
+           609,004      cache-misses:u            #    0.285 % of all cache refs    
+            61,538      dTLB-load-misses:u                                          
+        10,652,908      stalled-cycles-frontend:u #    3.78% frontend cycles idle   
+        46,409,134      stalled-cycles-backend:u  #   16.47% backend cycles idle  
+
+
+
+
+串行算法
+     1,257,819,688      cycles:u                                                    
+     2,156,011,531      instructions:u            #    1.71  insn per cycle         
+                                                  #    0.29  stalled cycles per insn
+       663,370,722      cache-references:u                                          
+         3,573,487      cache-misses:u            #    0.539 % of all cache refs    
+           770,790      dTLB-load-misses:u                                          
+        32,087,704      stalled-cycles-frontend:u #    2.55% frontend cycles idle   
+       620,021,639      stalled-cycles-backend:u  #   49.29% backend cycles idle  
+
+DIT+Montgomery
+     1,060,778,609      cycles:u                                                    
+     2,118,656,289      in
