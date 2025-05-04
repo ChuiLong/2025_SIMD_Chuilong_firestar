@@ -1,0 +1,358 @@
+#include <cstring>
+#include <string>
+#include <iostream>
+#include <fstream>
+#include <chrono>
+#include <iomanip>
+#include <sys/time.h>
+#include<bits/stdc++.h>
+#include <algorithm>
+#include <omp.h>
+#include <arm_neon.h>
+typedef long long int ll;
+const int g = 3;
+// 可以自行添加需要的头文件
+ll rev[300000]={0};
+
+static inline uint64x2_t vmulq_u64(uint64x2_t a, uint64x2_t b) {
+    uint64_t a0 = vgetq_lane_u64(a, 0);
+    uint64_t a1 = vgetq_lane_u64(a, 1);
+    uint64_t b0 = vgetq_lane_u64(b, 0);
+    uint64_t b1 = vgetq_lane_u64(b, 1);
+    uint64_t r0 = a0 * b0;
+    uint64_t r1 = a1 * b1;
+    uint64x2_t res = vdupq_n_u64(0);
+    res = vsetq_lane_u64(r0, res, 0);
+    res = vsetq_lane_u64(r1, res, 1);
+    return res;
+}
+
+void fRead(int *a, int *b, int *n, int *p, int input_id){
+    // 数据输入函数
+    std::string str1 = "/nttdata/";
+    std::string str2 = std::to_string(input_id);
+    std::string strin = str1 + str2 + ".in";
+    char data_path[strin.size() + 1];
+    std::copy(strin.begin(), strin.end(), data_path);
+    data_path[strin.size()] = '\0';
+    std::ifstream fin;
+    fin.open(data_path, std::ios::in);
+    fin>>*n>>*p;
+    //std::cout<<"astart";
+    //fout<<"astart";
+    for (int i = 0; i < *n; i++){
+        fin>>a[i];
+      //  std::cout<<a[i];
+    }
+    //std::cout<<"bstart";
+    //fout<<"bstart";
+    for (int i = 0; i < *n; i++){   
+        fin>>b[i];
+        //std::cout<<b[i];
+    }
+}
+
+void fCheck(int *ab, int n, int input_id){
+    // 判断多项式乘法结果是否正确
+    std::string str1 = "/nttdata/";
+    std::string str2 = std::to_string(input_id);
+    std::string strout = str1 + str2 + ".out";
+    char data_path[strout.size() + 1];
+    std::copy(strout.begin(), strout.end(), data_path);
+    data_path[strout.size()] = '\0';
+    std::ifstream fin;
+    fin.open(data_path, std::ios::in);
+    for (int i = 0; i < n * 2 - 1; i++){
+        int x;
+        fin>>x;
+        if(x != ab[i]){
+            std::cout<<"多项式乘法结果错误"<<std::endl;
+            return;
+        }
+    }
+    std::cout<<"多项式乘法结果正确"<<std::endl;
+    return;
+}
+
+void fWrite(int *ab, int n, int input_id){
+    // 数据输出函数, 可以用来输出最终结果, 也可用于调试时输出中间数组
+    std::string str1 = "files/";
+    std::string str2 = std::to_string(input_id);
+    std::string strout = str1 + str2 + ".out";
+    char output_path[strout.size() + 1];
+    std::copy(strout.begin(), strout.end(), output_path);
+    output_path[strout.size()] = '\0';
+    std::ofstream fout;
+    fout.open(output_path, std::ios::out);
+    //std::cout<<"abstart!";
+    //fout<<"abstart";
+    for (int i = 0; i < n * 2 - 1; i++){
+        fout<<ab[i]<<'\n';
+      //  std::cout<<ab[i]<<"\n";
+    }
+}
+
+struct Montgomery32{    
+    uint32_t m,ir;
+    static uint32_t inv_m(uint32_t m){
+        uint32_t x =1;
+        for(uint32_t i = 0;i<5;i++)
+            x*=2-x*m;
+    return x;}
+    Montgomery32(uint32_t m_) : m(m_) {
+        uint32_t inv = inv_m(m);
+        ir = uint32_t(-int32_t(inv));
+      }
+};
+
+struct MontgomeryNEON{
+        uint32x4_t vm;   // [m, m, m, m]
+        uint32x4_t vir;  // [ir,ir,ir,ir]
+        uint64x2_t vm64; // 同步长的 u64 版本 m
+        uint32x4_t vR2; 
+
+
+    MontgomeryNEON(uint32_t m) {
+        Montgomery32 M(m);
+        vm   = vdupq_n_u32(M.m);
+        vir  = vdupq_n_u32(M.ir);
+        vm64 = vdupq_n_u64(uint64_t(M.m));
+        uint32_t Rmod  = (uint64_t(1) << 32) % m;
+        uint32_t R2mod = (uint64_t(Rmod) * Rmod) % m;
+        vR2  = vdupq_n_u32(R2mod);
+      }
+
+        // 并行 4× Montgomery redc：输入 a4,b4 路，返回 (a*b)·R^{-1} mod m
+    inline uint32x4_t mul4(uint32x4_t a4, uint32x4_t b4) const {
+        // 拆 low/high 各两路，做 32×32→64 乘法
+        uint32x2_t a_lo = vget_low_u32(a4),  a_hi = vget_high_u32(a4);
+        uint32x2_t b_lo = vget_low_u32(b4),  b_hi = vget_high_u32(b4);
+        uint64x2_t t_lo = vmull_u32(a_lo, b_lo);
+        uint64x2_t t_hi = vmull_u32(a_hi, b_hi);
+
+        // 取乘积低 32 位 (mod 2^32)，并 * ir mod 2^32 → u
+        uint32x2_t t_lo32 = vmovn_u64(t_lo);
+        uint32x2_t t_hi32 = vmovn_u64(t_hi);
+        uint32x2_t ir_lo  = vget_low_u32(vir);
+        uint32x2_t u_lo   = vmul_u32(t_lo32, ir_lo);
+        uint32x2_t u_hi   = vmul_u32(t_hi32, ir_lo);
+
+        // 将 u 扩宽到 64 位，并乘以 m
+        uint64x2_t u_lo64 = vmovl_u32(u_lo);
+        uint64x2_t u_hi64 = vmovl_u32(u_hi);
+        u_lo64 = vmulq_u64(u_lo64, vm64);
+        u_hi64 = vmulq_u64(u_hi64, vm64);
+
+        // 加回 t，保证可以被 2^32 整除
+        t_lo = vaddq_u64(t_lo, u_lo64);
+        t_hi = vaddq_u64(t_hi, u_hi64);
+
+        // 右移 32 位，完成 Montgomery 约减
+        uint64x2_t r_lo64 = vshrq_n_u64(t_lo, 32);
+        uint64x2_t r_hi64 = vshrq_n_u64(t_hi, 32);
+
+        // 落回 32 位结果
+        uint32x2_t r_lo32 = vmovn_u64(r_lo64);
+        uint32x2_t r_hi32 = vmovn_u64(r_hi64);
+        return vcombine_u32(r_lo32, r_hi32);
+    }
+
+    // 最后如果需要把结果规约到 [0,m)：
+    inline uint32x4_t normalize4(uint32x4_t x4) const {
+        // 如果 x >= m，则减 m
+        uint32x4_t mask = vcgeq_u32(x4, vm);     // x4>=m ? 0xFFFFFFFF : 0
+        uint32x4_t sub  = vandq_u32(mask, vm);   // 若需减就取 m，否则 0
+        return vsubq_u32(x4, sub);
+    }
+
+    // 向量版 Montgomery 域转换： tran(a) = a * R mod m
+    inline uint32x4_t tran4(uint32x4_t x4) const {
+        // REDC( x * R^2 ) == a * R mod m
+        uint32x4_t t = mul4(x4, vR2);
+        return normalize4(t);
+    }
+
+    // 向量版 Montgomery 还原： val(a) = a * R^{-1} mod m
+    inline uint32x4_t val4(uint32x4_t x4) const {
+        // REDC( x * 1 ) == a * R^{-1} mod m
+        uint32x4_t t = mul4(x4, vdupq_n_u32(1));
+        return normalize4(t);
+    }
+};
+
+
+static inline uint32x4_t pow4(uint32x4_t x4, int y, uint32_t m) {
+    MontgomeryNEON M(m);
+
+    // 1) 进 Montgomery 域
+    uint32x4_t xR   = M.tran4(x4);
+    uint32x4_t ansR = M.tran4(vdupq_n_u32(1));  // tran(1)
+
+    // 2) 二进制快速幂循环
+    while (y > 0) {
+        if (y & 1) {
+            ansR = M.mul4(ansR, xR);
+            ansR = M.normalize4(ansR);
+        }
+        xR   = M.mul4(xR, xR);
+        xR   = M.normalize4(xR);
+        y   >>= 1;
+    }
+
+    // 3) 出 Montgomery 域
+    return M.val4(ansR);
+}
+int pow(int x,int y,int p)//这个函数用于NTT的快速幂计算
+{  
+	ll z=1ll*x;
+    ll ans=1ll;
+	for (;y;y/=2,z=z*z%p)
+        if (y&1)
+            ans=ans*z%p;
+	return (int)ans%p;
+}
+static inline int mod_pow(int x, int y, int p) {
+    ll z = 1ll * x, ans = 1;
+    while (y) {
+        if (y & 1) ans = ans * z % p;
+        z = z * z % p;
+        y >>= 1;
+    }
+    return (int)ans;
+}
+void ntt(int *a, int n, int p, int inv) {
+    // bit-reverse
+    int lg = 0;
+    while ((1 << lg) < n) lg++;
+    for (int i = 0; i < n; i++) {
+        rev[i] = (rev[i >> 1] >> 1) | ((i & 1) << (lg - 1));
+        if (i < rev[i]) std::swap(a[i], a[rev[i]]);
+    }
+
+    MontgomeryNEON M(p);
+    for (int mid = 1; mid < n; mid <<= 1) {
+        int w0 = mod_pow(g, (p - 1) / (mid * 2), p);
+        if (inv == -1) w0 = mod_pow(w0, p - 2, p);
+        int blk = mid * 2;
+        int grp = blk * 4;
+
+        uint32_t w0sq = (uint64_t)w0 * w0 % p;
+        uint32_t w0cu = (uint64_t)w0sq * w0 % p;
+        uint32x4_t v_w = vdupq_n_u32((uint32_t)w0);
+
+        // process full vector groups
+        int full_groups = n / grp;
+        for (int gidx = 0; gidx < full_groups; ++gidx) {
+            int base_i = gidx * grp;
+            // init omega vector at start of group
+            uint32x4_t v_omega = vdupq_n_u32(1);
+            v_omega = vsetq_lane_u32((uint32_t)w0,   v_omega, 1);
+            v_omega = vsetq_lane_u32(w0sq, v_omega, 2);
+            v_omega = vsetq_lane_u32(w0cu, v_omega, 3);
+            int *base = a + base_i;
+            for (int j = 0; j < mid; ++j) {
+                uint32x4_t va = { (uint32_t)base[j],           (uint32_t)base[blk + j],
+                                  (uint32_t)base[2*blk + j],   (uint32_t)base[3*blk + j] };
+                uint32x4_t vb = { (uint32_t)base[j + mid],     (uint32_t)base[blk + j + mid],
+                                  (uint32_t)base[2*blk + j + mid], (uint32_t)base[3*blk + j + mid] };
+                uint32x4_t vt = M.mul4(vb, v_omega);
+                uint32x4_t u4 = M.normalize4(vaddq_u32(va, vt));
+                uint32x4_t v4 = M.normalize4(vsubq_u32(va, vt));
+                vst1q_u32((uint32_t*)(base + j),       u4);
+                vst1q_u32((uint32_t*)(base + j + mid), v4);
+                v_omega = M.mul4(v_omega, v_w);
+            }
+        }
+        // scalar fallback for remainder
+        int rem_start = full_groups * grp;
+        for (int i = rem_start; i < n; i += blk) {
+            uint32_t omega = 1;
+            for (int j = 0; j < mid; ++j) {
+                int x = a[i + j];
+                int y = (ll)omega * a[i + j + mid] % p;
+                a[i + j]       = (x + y) % p;
+                a[i + j + mid] = (x - y + p) % p;
+                omega = (ll)omega * w0 % p;
+            }
+        }
+    }
+}
+
+
+
+
+/*
+void ntt(int *a, int n, int p,int inv){
+    int startbit = 0;
+    while((1<<startbit)<n)startbit++;
+    
+    for(int i = 0;i<n;i++){
+        rev[i] = (rev[i>>1])>>1 | ((i&1)<<(startbit-1));
+        if(i<rev[i]) std::swap(a[i],a[rev[i]]);
+    }
+
+    for(int mid = 1;mid<n;mid*=2){
+        int tmp = pow4(g,(p-1)/(mid*2),p);
+        if(inv == -1) tmp=pow4(tmp,p-2,p);
+        for(int i = 0;i<n;i+=mid*2){
+            ll omega = 1;
+            for(int j = 0;j<mid;j++,omega = omega*tmp%p){
+                ll x = a[i+j],y=omega*a[i+j+mid]%p;
+                a[i+j] = (x+y)%p,a[i+j+mid]=(x-y+p)%p;
+            }
+        }
+    }
+}
+*/
+void poly_multiply(int *a, int *b, int *ab, int n, int p){
+    int m = 1;
+while (m < 2*n-1) m <<= 1;         // 找到 ≥2n-1 的最小二次幂
+// 把 a, b 扩展到长度 m
+std::fill(a+n, a+m, 0);
+std::fill(b+n, b+m, 0);
+// 然后用 m 调用 ntt/INTT
+    ntt(a, m, p,1);  
+    ntt(b, m,p,1); 
+
+    for (int i = 0; i < m; ++i) {
+        ab[i] = (1ll*a[i] * b[i]) % p;
+    }
+    ntt(ab, m, p,-1); 
+    ll n_inv = pow(m, p - 2, p); 
+    for (int i = 0; i < m; ++i) {
+        ab[i] = (1LL * ab[i] * n_inv) % p;
+    }
+}
+
+int a[300000], b[300000], ab[300000];
+int main(int argc, char *argv[])
+{
+    
+    // 保证输入的所有模数的原根均为 3, 且模数都能表示为 a \times 4 ^ k + 1 的形式
+    // 输入模数分别为 7340033 104857601 469762049 263882790666241
+    // 第四个模数超过了整型表示范围, 如果实现此模数意义下的多项式乘法需要修改框架
+    // 对第四个模数的输入数据不做必要要求, 如果要自行探索大模数 NTT, 请在完成前三个模数的基础代码及优化后实现大模数 NTT
+    // 输入文件共五个, 第一个输入文件 n = 4, 其余四个文件分别对应四个模数, n = 131072
+    // 在实现快速数论变化前, 后四个测试样例运行时间较久, 推荐调试正确性时只使用输入文件 1
+    int test_begin = 0;
+    int test_end = 3;
+    for(int i = test_begin; i <= test_end; ++i){
+        long double ans = 0;
+        int n_, p_;
+        fRead(a, b, &n_, &p_, i);
+        memset(ab,0,sizeof(ab));
+        memset(rev,0,sizeof(rev));
+        auto Start = std::chrono::high_resolution_clock::now();
+        // TODO : 将 poly_multiply 函数替换成你写的 ntt
+        poly_multiply(a,b,ab,n_,p_);
+        auto End = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double,std::ratio<1,1000>>elapsed = End - Start;
+        ans += elapsed.count();
+        fCheck(ab, n_, i);
+        std::cout<<"average latency for n = "<<n_<<" p = "<<p_<<" : "<<ans<<" (us) "<<std::endl;
+        // 可以使用 fWrite 函数将 ab 的输出结果打印到 files 文件夹下
+        // 禁止使用 cout 一次性输出大量文件内容
+        fWrite(ab, n_, i);
+    }
+    return 0;
+}
